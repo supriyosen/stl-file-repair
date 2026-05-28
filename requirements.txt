@@ -1,0 +1,6 @@
+fastapi>=0.115
+numpy>=2.0
+pymeshfix>=0.17
+python-multipart>=0.0.9
+trimesh>=4.5
+uvicorn[standard]>=0.32

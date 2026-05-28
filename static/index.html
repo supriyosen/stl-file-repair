@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local STL Repair</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Local mesh repair</p>
+          <h1>STL Repair Workbench</h1>
+        </div>
+        <div class="topbar-status">
+          <span class="signal"></span>
+          <span>Private local processing</span>
+        </div>
+      </header>
+
+      <section class="app-grid">
+        <aside class="panel upload-panel" aria-label="Repair controls">
+          <div class="panel-title">
+            <span class="panel-index">01</span>
+            <div>
+              <h2>Import</h2>
+              <p class="subtle">Drop a Tripo mesh and repair it for Bambu Studio.</p>
+            </div>
+          </div>
+
+          <label id="dropzone" class="dropzone" for="fileInput">
+            <input id="fileInput" type="file" accept=".stl,.obj,.ply" />
+            <span class="drop-glyph" aria-hidden="true"></span>
+            <span class="drop-title">Choose mesh</span>
+            <span id="fileName" class="drop-meta">STL, OBJ, or PLY</span>
+          </label>
+
+          <div class="options">
+            <label><input id="useMeshfix" type="checkbox" checked /><span>MeshFix manifold repair</span></label>
+            <label><input id="joinComponents" type="checkbox" checked /><span>Join components</span></label>
+            <label><input id="removeSmall" type="checkbox" /><span>Remove small components</span></label>
+          </div>
+
+          <div id="progressWrap" class="progress-wrap hidden" aria-live="polite">
+            <div class="progress-copy">
+              <span id="progressLabel">Preparing</span>
+              <strong id="progressValue">0%</strong>
+            </div>
+            <div class="progress-track">
+              <span id="progressFill" class="progress-fill"></span>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="analyzeBtn" type="button">Analyze</button>
+            <button id="repairBtn" class="primary" type="button">Repair STL</button>
+            <a id="downloadLink" class="download hidden" href="#">Download repaired STL</a>
+          </div>
+        </aside>
+
+        <section class="panel viewer-panel" aria-label="Mesh preview">
+          <div class="viewer-header">
+            <div>
+              <p class="eyebrow">Preview</p>
+              <h2 id="viewerTitle">No mesh loaded</h2>
+            </div>
+            <span id="statusBadge" class="badge">Idle</span>
+          </div>
+          <canvas id="viewerCanvas"></canvas>
+          <p id="viewerFallback" class="viewer-fallback">
+            The local repair pipeline works without preview. The viewer appears after you choose a file.
+          </p>
+        </section>
+
+        <aside class="panel inspector-panel" aria-label="Repair diagnostics">
+          <div class="inspector-head">
+            <div>
+              <p class="eyebrow">Diagnostics</p>
+              <h2>Print Readiness</h2>
+            </div>
+            <span id="successStatus" class="badge">Not run</span>
+          </div>
+
+          <div class="diagnostics">
+            <div class="diagnostic-block">
+              <div class="panel-heading">
+                <h3>Before</h3>
+                <span id="beforeStatus" class="badge">Waiting</span>
+              </div>
+              <div id="beforeStats" class="stats"></div>
+            </div>
+            <div class="diagnostic-block">
+              <div class="panel-heading">
+                <h3>After</h3>
+                <span id="afterStatus" class="badge">Waiting</span>
+              </div>
+              <div id="afterStats" class="stats"></div>
+            </div>
+          </div>
+
+          <div class="steps-wrap">
+            <div class="panel-heading">
+              <h3>Repair Log</h3>
+            </div>
+            <ol id="steps" class="steps"></ol>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
