@@ -35,6 +35,7 @@ const progressWrap = document.querySelector("#progressWrap");
 const progressLabel = document.querySelector("#progressLabel");
 const progressValue = document.querySelector("#progressValue");
 const progressFill = document.querySelector("#progressFill");
+const progressDetail = document.querySelector("#progressDetail");
 const ctx = canvas.getContext("2d");
 
 function setBusy(isBusy) {
@@ -96,6 +97,8 @@ function showProgress(label) {
   clearInterval(state.progressTimer);
   state.progressValue = 3;
   progressLabel.textContent = label;
+  progressDetail.textContent = "";
+  progressWrap.classList.remove("is-indeterminate");
   progressWrap.classList.remove("hidden");
   updateProgress(3);
 }
@@ -104,6 +107,12 @@ function updateProgress(value, text = `${Math.round(value)}%`) {
   state.progressValue = value;
   progressValue.textContent = text;
   progressFill.style.width = `${value}%`;
+}
+
+function describeFileScale() {
+  if (!state.file) return "Large mesh processing can take several minutes.";
+  const sizeMb = (state.file.size / 1024 / 1024).toFixed(1);
+  return `${sizeMb} MB mesh. Exact MeshFix percentage is not available; this phase can take several minutes on 9M+ triangles.`;
 }
 
 function formatElapsed(ms) {
@@ -117,17 +126,61 @@ function startServerPhase(label) {
   const startedAt = Date.now();
   clearInterval(state.progressTimer);
   progressLabel.textContent = label;
-  updateProgress(90, "0:00");
+  progressWrap.classList.add("is-indeterminate");
+  progressDetail.textContent = describeFileScale();
+  updateProgress(100, "0:00");
   state.progressTimer = setInterval(() => {
     const elapsed = Date.now() - startedAt;
-    const pulse = 90 + Math.min(7, Math.floor(elapsed / 12000));
-    updateProgress(pulse, formatElapsed(elapsed));
+    updateProgress(100, formatElapsed(elapsed));
+    progressDetail.textContent = `${describeFileScale()} Elapsed ${formatElapsed(elapsed)}.`;
   }, 500);
+}
+
+function updateLocalJobProgress(job) {
+  const startedAt = job.started_at ? job.started_at * 1000 : Date.now();
+  const elapsed = formatElapsed(Date.now() - startedAt);
+  progressLabel.textContent = job.stage === "starting" ? "Starting local repair worker" : "Repairing in local worker";
+  progressWrap.classList.add("is-indeterminate");
+  updateProgress(100, elapsed);
+  progressDetail.textContent = `${describeFileScale()} Worker status: ${job.status}. Elapsed ${elapsed}.`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pollRepairJob(jobId) {
+  while (true) {
+    const response = await fetch(apiUrl(`/api/jobs/${jobId}`), { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.detail || `Could not read repair job status: HTTP ${response.status}.`);
+    }
+
+    const job = payload.job;
+    updateLocalJobProgress(job);
+
+    if (job.status === "complete") {
+      return {
+        filename: job.filename,
+        download_url: job.download_url,
+        report: job.report,
+      };
+    }
+
+    if (job.status === "failed") {
+      throw new Error(job.error || "Local repair worker failed.");
+    }
+
+    await sleep(1500);
+  }
 }
 
 function finishProgress(label) {
   clearInterval(state.progressTimer);
+  progressWrap.classList.remove("is-indeterminate");
   progressLabel.textContent = label;
+  progressDetail.textContent = "";
   updateProgress(100);
   setTimeout(() => {
     progressWrap.classList.add("hidden");
@@ -137,7 +190,9 @@ function finishProgress(label) {
 
 function failProgress(label) {
   clearInterval(state.progressTimer);
+  progressWrap.classList.remove("is-indeterminate");
   progressLabel.textContent = label;
+  progressDetail.textContent = "";
   progressValue.textContent = "Error";
   progressFill.style.width = "100%";
 }
@@ -240,12 +295,15 @@ function sendMeshRequest(url, label) {
     request.upload.onprogress = (event) => {
       if (!event.lengthComputable) {
         progressLabel.textContent = `Uploading ${state.file.name}`;
+        progressDetail.textContent = "Browser is sending the file to the local backend.";
+        progressWrap.classList.remove("is-indeterminate");
         updateProgress(Math.max(state.progressValue, 12));
         return;
       }
       const uploaded = event.loaded / event.total;
       const percent = Math.min(84, 4 + uploaded * 80);
       progressLabel.textContent = `Uploading ${state.file.name}`;
+      progressDetail.textContent = `${(event.loaded / 1024 / 1024).toFixed(1)} MB of ${(event.total / 1024 / 1024).toFixed(1)} MB uploaded.`;
       updateProgress(percent);
     };
 
@@ -299,6 +357,35 @@ async function postMesh(url, label) {
   }
 }
 
+async function repairMesh() {
+  if (isHostedUploadBlocked()) {
+    showHostedLimit();
+    return;
+  }
+  setBusy(true);
+  showProgress("Uploading mesh for repair");
+  downloadLink.classList.add("hidden");
+  try {
+    const payload = await sendMeshRequest("/api/repair-job", "Starting repair job");
+    const jobId = payload.job?.id;
+    if (!jobId) throw new Error("Local backend did not return a repair job id.");
+    const result = await pollRepairJob(jobId);
+    applyReport(result);
+    if (result.download_url) {
+      downloadLink.href = normalizeDownloadUrl(result.download_url);
+      downloadLink.classList.remove("hidden");
+    }
+    finishProgress("Repair complete");
+  } catch (error) {
+    statusBadge.textContent = "Error";
+    statusBadge.classList.add("bad");
+    renderSteps([error.message]);
+    failProgress("Could not complete");
+  } finally {
+    setBusy(false);
+  }
+}
+
 function chooseFile(file) {
   if (!file) return;
   state.file = file;
@@ -338,7 +425,7 @@ dropzone.addEventListener("drop", (event) => {
 
 fileInput.addEventListener("change", () => chooseFile(fileInput.files[0]));
 analyzeBtn.addEventListener("click", () => postMesh("/api/analyze", "Analyzing mesh"));
-repairBtn.addEventListener("click", () => postMesh("/api/repair", "Repairing mesh"));
+repairBtn.addEventListener("click", repairMesh);
 window.addEventListener("resize", renderPreview);
 window.addEventListener("DOMContentLoaded", initializeApp);
 

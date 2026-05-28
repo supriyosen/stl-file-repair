@@ -6,7 +6,7 @@ A reusable local STL repair workflow for meshes that fail in Bambu Studio with e
 
 ```bash
 source .venv/bin/activate
-uvicorn app:app --reload --host 127.0.0.1 --port 8000
+uvicorn app:app --host 127.0.0.1 --port 8000 --workers 2
 ```
 
 Open `http://127.0.0.1:8000`, drop in an STL, click **Repair STL**, then download the repaired STL from the page.
