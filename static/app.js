@@ -1,4 +1,5 @@
 const MAX_PREVIEW_TRIANGLES = 14000;
+const VERCEL_SAFE_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 const state = {
   file: null,
@@ -35,14 +36,44 @@ const progressFill = document.querySelector("#progressFill");
 const ctx = canvas.getContext("2d");
 
 function setBusy(isBusy) {
-  analyzeBtn.disabled = isBusy;
-  repairBtn.disabled = isBusy;
+  const blocked = isHostedUploadBlocked();
+  analyzeBtn.disabled = isBusy || blocked;
+  repairBtn.disabled = isBusy || blocked;
   if (isBusy) {
     statusBadge.classList.remove("good", "bad");
     statusBadge.textContent = "Working";
   } else if (statusBadge.textContent === "Working") {
     statusBadge.textContent = "Ready";
   }
+}
+
+function isHostedVercelApp() {
+  return window.location.hostname.endsWith(".vercel.app");
+}
+
+function isHostedUploadBlocked() {
+  return Boolean(state.file && isHostedVercelApp() && state.file.size > VERCEL_SAFE_UPLOAD_BYTES);
+}
+
+function hostedLimitMessage() {
+  const sizeMb = (state.file.size / 1024 / 1024).toFixed(2);
+  return `This Vercel-hosted repair backend can accept files up to 4 MB. ${state.file.name} is ${sizeMb} MB, so preview works here but Analyze/Repair must run in the local app or on a container backend.`;
+}
+
+function showHostedLimit() {
+  analyzeBtn.disabled = true;
+  repairBtn.disabled = true;
+  progressWrap.classList.remove("hidden");
+  progressLabel.textContent = "Cloud upload limit";
+  progressValue.textContent = "4 MB max";
+  progressFill.style.width = "100%";
+  statusBadge.classList.remove("good");
+  statusBadge.classList.add("bad");
+  statusBadge.textContent = "Cloud limit";
+  successStatus.classList.remove("good");
+  successStatus.classList.add("bad");
+  successStatus.textContent = "Local only";
+  renderSteps([hostedLimitMessage()]);
 }
 
 function showProgress(label) {
@@ -169,6 +200,10 @@ function formData() {
 }
 
 async function postMesh(url, label) {
+  if (isHostedUploadBlocked()) {
+    showHostedLimit();
+    return;
+  }
   setBusy(true);
   showProgress(label);
   downloadLink.classList.add("hidden");
@@ -205,6 +240,14 @@ function chooseFile(file) {
   renderStats(beforeStats, null);
   renderStats(afterStats, null);
   renderSteps([]);
+  successStatus.classList.remove("good", "bad");
+  successStatus.textContent = "Not run";
+  analyzeBtn.disabled = false;
+  repairBtn.disabled = false;
+  progressWrap.classList.add("hidden");
+  if (isHostedUploadBlocked()) {
+    showHostedLimit();
+  }
   previewFile(file);
 }
 
@@ -330,7 +373,7 @@ function normalizePreview(parsed) {
 async function previewFile(file) {
   if (!file.name.toLowerCase().endsWith(".stl")) {
     viewerFallback.textContent = "Preview supports STL files. Repair still supports STL, OBJ, and PLY.";
-    statusBadge.textContent = "Ready";
+    if (!isHostedUploadBlocked()) statusBadge.textContent = "Ready";
     clearCanvas();
     return;
   }
@@ -348,7 +391,7 @@ async function previewFile(file) {
       state.preview.originalTriangles > state.preview.triangles.length
         ? `Previewing ${state.preview.triangles.length.toLocaleString()} of ${state.preview.originalTriangles.toLocaleString()} triangles.`
         : "";
-    statusBadge.textContent = "Ready";
+    if (!isHostedUploadBlocked()) statusBadge.textContent = "Ready";
     startPreview();
   } catch (error) {
     state.preview = null;
