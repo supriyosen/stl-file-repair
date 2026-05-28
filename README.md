@@ -40,3 +40,13 @@ Tripo/image-to-3D meshes often contain internal shells, tiny disconnected fragme
 ## Vercel Deployment
 
 This project includes `vercel.json` and `api/index.py` for Vercel's Python runtime. Vercel is convenient for sharing the UI, but large STL repair jobs may hit serverless upload, memory, or duration limits. For production-heavy repair workloads, use a container host for the backend and keep Vercel as the frontend.
+
+## Large File Deployment
+
+Vercel Functions cannot accept 100 MB+ mesh uploads directly. Deploy the included Docker backend to a container host, then set this Vercel environment variable:
+
+```bash
+EXTERNAL_REPAIR_API_URL=https://your-container-backend.example.com
+```
+
+The frontend will keep using Vercel, but Analyze and Repair will send files to the external backend. `render.yaml` and `Dockerfile` are included for a Render-style container deployment.

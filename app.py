@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -21,6 +22,22 @@ for directory in (UPLOAD_DIR, OUTPUT_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Local STL Repair")
+
+allowed_origins = [
+    origin.strip()
+    for origin in os.environ.get(
+        "STL_REPAIR_ALLOWED_ORIGINS",
+        "http://localhost:8000,http://127.0.0.1:8000,https://stl-file-repair.vercel.app",
+    ).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -46,6 +63,14 @@ def index() -> FileResponse:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/config")
+def config() -> dict[str, str | int]:
+    return {
+        "external_repair_api_url": os.environ.get("EXTERNAL_REPAIR_API_URL", "").rstrip("/"),
+        "vercel_safe_upload_bytes": 4 * 1024 * 1024,
+    }
 
 
 @app.post("/api/analyze")

@@ -8,6 +8,8 @@ const state = {
   animationId: null,
   progressTimer: null,
   progressValue: 0,
+  apiBase: "",
+  hasExternalBackend: false,
 };
 
 const fileInput = document.querySelector("#fileInput");
@@ -52,12 +54,26 @@ function isHostedVercelApp() {
 }
 
 function isHostedUploadBlocked() {
-  return Boolean(state.file && isHostedVercelApp() && state.file.size > VERCEL_SAFE_UPLOAD_BYTES);
+  return Boolean(
+    state.file &&
+      isHostedVercelApp() &&
+      !state.hasExternalBackend &&
+      state.file.size > VERCEL_SAFE_UPLOAD_BYTES,
+  );
 }
 
 function hostedLimitMessage() {
   const sizeMb = (state.file.size / 1024 / 1024).toFixed(2);
   return `This Vercel-hosted repair backend can accept files up to 4 MB. ${state.file.name} is ${sizeMb} MB, so preview works here but Analyze/Repair must run in the local app or on a container backend.`;
+}
+
+function apiUrl(path) {
+  return `${state.apiBase}${path}`;
+}
+
+function normalizeDownloadUrl(url) {
+  if (!url || !state.apiBase || url.startsWith("http")) return url;
+  return `${state.apiBase}${url}`;
 }
 
 function showHostedLimit() {
@@ -208,12 +224,12 @@ async function postMesh(url, label) {
   showProgress(label);
   downloadLink.classList.add("hidden");
   try {
-    const response = await fetch(url, { method: "POST", body: formData() });
+    const response = await fetch(apiUrl(url), { method: "POST", body: formData() });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || "Repair failed.");
     applyReport(payload);
     if (payload.download_url) {
-      downloadLink.href = payload.download_url;
+      downloadLink.href = normalizeDownloadUrl(payload.download_url);
       downloadLink.classList.remove("hidden");
     }
     finishProgress(url.includes("repair") ? "Repair complete" : "Analysis complete");
@@ -268,7 +284,27 @@ fileInput.addEventListener("change", () => chooseFile(fileInput.files[0]));
 analyzeBtn.addEventListener("click", () => postMesh("/api/analyze", "Analyzing mesh"));
 repairBtn.addEventListener("click", () => postMesh("/api/repair", "Repairing mesh"));
 window.addEventListener("resize", renderPreview);
-window.addEventListener("DOMContentLoaded", loadSamplePreview);
+window.addEventListener("DOMContentLoaded", initializeApp);
+
+async function initializeApp() {
+  await loadRuntimeConfig();
+  loadSamplePreview();
+}
+
+async function loadRuntimeConfig() {
+  try {
+    const response = await fetch("/api/config", { cache: "no-store" });
+    if (!response.ok) return;
+    const config = await response.json();
+    if (config.external_repair_api_url) {
+      state.apiBase = config.external_repair_api_url.replace(/\/$/, "");
+      state.hasExternalBackend = true;
+    }
+  } catch {
+    state.apiBase = "";
+    state.hasExternalBackend = false;
+  }
+}
 
 function isBinaryStl(buffer) {
   if (buffer.byteLength < 84) return false;

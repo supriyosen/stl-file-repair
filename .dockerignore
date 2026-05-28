@@ -1,0 +1,7 @@
+.git
+.venv
+.vercel
+__pycache__
+*.pyc
+uploads
+outputs
