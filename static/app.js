@@ -94,20 +94,35 @@ function showHostedLimit() {
 
 function showProgress(label) {
   clearInterval(state.progressTimer);
-  state.progressValue = 8;
+  state.progressValue = 3;
   progressLabel.textContent = label;
   progressWrap.classList.remove("hidden");
-  updateProgress(8);
-  state.progressTimer = setInterval(() => {
-    const next = state.progressValue + Math.max(1, Math.round((92 - state.progressValue) * 0.08));
-    updateProgress(Math.min(next, 92));
-  }, 260);
+  updateProgress(3);
 }
 
-function updateProgress(value) {
+function updateProgress(value, text = `${Math.round(value)}%`) {
   state.progressValue = value;
-  progressValue.textContent = `${Math.round(value)}%`;
+  progressValue.textContent = text;
   progressFill.style.width = `${value}%`;
+}
+
+function formatElapsed(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function startServerPhase(label) {
+  const startedAt = Date.now();
+  clearInterval(state.progressTimer);
+  progressLabel.textContent = label;
+  updateProgress(90, "0:00");
+  state.progressTimer = setInterval(() => {
+    const elapsed = Date.now() - startedAt;
+    const pulse = 90 + Math.min(7, Math.floor(elapsed / 12000));
+    updateProgress(pulse, formatElapsed(elapsed));
+  }, 500);
 }
 
 function finishProgress(label) {
@@ -215,6 +230,49 @@ function formData() {
   return data;
 }
 
+function sendMeshRequest(url, label) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", apiUrl(url), true);
+    request.responseType = "text";
+    request.timeout = 0;
+
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable) {
+        progressLabel.textContent = `Uploading ${state.file.name}`;
+        updateProgress(Math.max(state.progressValue, 12));
+        return;
+      }
+      const uploaded = event.loaded / event.total;
+      const percent = Math.min(84, 4 + uploaded * 80);
+      progressLabel.textContent = `Uploading ${state.file.name}`;
+      updateProgress(percent);
+    };
+
+    request.upload.onload = () => {
+      startServerPhase(label.includes("Repair") ? "Repairing on local backend" : "Analyzing on local backend");
+    };
+
+    request.onload = () => {
+      try {
+        const payload = request.responseText ? JSON.parse(request.responseText) : {};
+        if (request.status < 200 || request.status >= 300) {
+          reject(new Error(payload.detail || `Request failed with HTTP ${request.status}.`));
+          return;
+        }
+        resolve(payload);
+      } catch (error) {
+        reject(new Error(`Could not read backend response: ${error.message}`));
+      }
+    };
+
+    request.onerror = () => reject(new Error("Connection to the local backend failed."));
+    request.onabort = () => reject(new Error("Request was cancelled."));
+    request.ontimeout = () => reject(new Error("The local backend timed out."));
+    request.send(formData());
+  });
+}
+
 async function postMesh(url, label) {
   if (isHostedUploadBlocked()) {
     showHostedLimit();
@@ -224,9 +282,7 @@ async function postMesh(url, label) {
   showProgress(label);
   downloadLink.classList.add("hidden");
   try {
-    const response = await fetch(apiUrl(url), { method: "POST", body: formData() });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || "Repair failed.");
+    const payload = await sendMeshRequest(url, label);
     applyReport(payload);
     if (payload.download_url) {
       downloadLink.href = normalizeDownloadUrl(payload.download_url);
